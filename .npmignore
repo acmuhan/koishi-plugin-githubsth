@@ -1,0 +1,25 @@
+# Source code
+src/
+
+# Configs
+tsconfig.json
+.eslintrc
+.prettierrc
+.gitignore
+
+# Tests
+test/
+*.test.ts
+*.spec.ts
+
+# IDEs
+.idea/
+.vscode/
+
+# Logs & Temp
+logs/
+*.log
+npm-debug.log*
+
+# Koishi specific
+koishi-to-demo/
