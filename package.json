@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-githubsth",
-  "version": "1.0.1-beta",
-  "description": "Github Subscriptions Notifications, push notifications for GitHub subscriptions For koishi",
+  "version": "1.0.7",
+  "description": "Koishi plugin for GitHub subscription notifications, trusted repositories, and rich rendering.",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
@@ -10,7 +10,7 @@
   ],
   "license": "MIT",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-assets.js",
     "dev": "tsc -w",
     "test": "jest"
   },
@@ -34,15 +34,16 @@
   },
   "koishi": {
     "description": {
-      "en": "Github Subscriptions Notifications, push notifications for GitHub subscriptions",
-      "zh": "GitHub订阅推送通知,依赖于Github适配器"
+      "en": "GitHub subscription notifications with trusted repository controls and render customization.",
+      "zh": "支持可信仓库控制与渲染自定义的 GitHub 订阅通知插件。"
     },
     "service": {
       "required": [
-        "database",
-        "github"
+        "database"
       ],
-      "optional": []
+      "optional": [
+        "github"
+      ]
     }
   }
 }

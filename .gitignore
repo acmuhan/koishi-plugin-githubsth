@@ -1,7 +1,14 @@
+# Dependencies
 docs/
 node_modules/
+
+# Build artifacts
 dist/
 coverage/
-.DS_Store
+
+# Logs / OS
 *.log
+.DS_Store
+
+# Local demo workspace
 koishi-to-demo/

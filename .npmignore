@@ -1,7 +1,7 @@
-# Source code
+# Source code (publish compiled output only)
 src/
 
-# Configs
+# Project configs
 tsconfig.json
 .eslintrc
 .prettierrc
@@ -12,14 +12,17 @@ test/
 *.test.ts
 *.spec.ts
 
-# IDEs
+# IDE / editor metadata
 .idea/
 .vscode/
 
-# Logs & Temp
+# Logs and temp files
 logs/
 *.log
 npm-debug.log*
 
-# Koishi specific
+# Local demo workspace
 koishi-to-demo/
+
+# Documentation workspace
+docs/
