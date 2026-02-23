@@ -1,0 +1,83 @@
+export default {
+  commands: {
+    githubsth: {
+      description: 'GitHub subscription notifier',
+    },
+    'githubsth.repo': {
+      description: 'Get repository info',
+      messages: {
+        repo_info: 'Repository: {0}/{1}\nDescription: {2}\nStars: {3}',
+        error: 'Failed to fetch repository info: {0}',
+        specify_repo: 'Please specify repository as owner/repo.',
+        not_found: 'Repository not found or access denied.',
+      },
+    },
+    'githubsth.subscribe': {
+      description: 'Subscribe GitHub repository events',
+      messages: {
+        specify_repo: 'Please provide repository as owner/repo.',
+        invalid_repo: 'Invalid repository format. Expected owner/repo.',
+        run_in_channel: 'Please run this command in a group/channel.',
+        repo_not_trusted: 'Repository is not in trusted list. Ask admin to add it first.',
+        invalid_events: 'Invalid events: {0}\nAllowed events: {1}',
+        updated: 'Subscription updated: {0}\nEvents: {1}',
+        created: 'Subscribed: {0}\nEvents: {1}',
+        failed: 'Subscribe failed. Please try again later.',
+      },
+    },
+    'githubsth.unsubscribe': {
+      description: 'Unsubscribe GitHub repository',
+      messages: {
+        specify_repo: 'Please provide repository as owner/repo.',
+        run_in_channel: 'Please run this command in a group/channel.',
+        not_found: 'Subscription not found.',
+        success: 'Unsubscribed: {0}',
+      },
+    },
+    'githubsth.list': {
+      description: 'List current channel subscriptions',
+      messages: {
+        run_in_channel: 'Please run this command in a group/channel.',
+        empty: 'No subscriptions in this channel.',
+        item: '{0} [{1}] theme={2} style={3}',
+      },
+    },
+    'githubsth.render': {
+      description: 'Render settings',
+      messages: {
+        invalid_mode: 'Invalid mode. Allowed: {0}',
+        mode_set: 'Runtime render mode set to {0} (config default is {1}).',
+        invalid_theme: 'Invalid theme. Run githubsth.render.themes first.',
+        theme_set: 'Default theme set: {0}',
+        invalid_style: 'Invalid style. Run githubsth.render.styles first.',
+        style_set: 'Default style set: {0}',
+        invalid_width: 'Please provide a valid width number.',
+        width_set: 'Image width set: {0}px',
+        digest_usage: 'Usage: githubsth.render.digest on|off',
+        digest_set: 'Digest mode: {0}',
+        invalid_seconds: 'Please provide a valid seconds value.',
+        digest_window_set: 'Digest window set: {0}s',
+        invalid_count: 'Please provide a valid count.',
+        digest_max_set: 'Digest max items set: {0}',
+        themes_list: 'Themes:\n- {0}',
+        styles_list: 'Styles:\n- {0}',
+        status_text: 'mode: {0} (configured: {1})\nfallback: {2}\ntheme(default): {3}\nstyle(default): {4}\nwidth: {5}\ntimeout: {6}ms\ndigest: {7} ({8}s, max {9})\npuppeteer: {10}',
+        unknown_event: 'Unknown event {0}, fallback to issue_comment.',
+        unknown_theme: 'Unknown theme {0}, fallback to default theme.',
+        unknown_style: 'Unknown style {0}, fallback to default style.',
+        preview_failed: 'Preview failed. Check puppeteer or render settings.',
+        repo_required: 'Please provide owner/repo.',
+        no_sub_in_channel: 'No subscription for this repo in current channel.',
+        repo_theme_set: 'Per-subscription theme set: {0} -> {1}',
+        repo_theme_cleared: 'Per-subscription theme cleared: {0}',
+        repo_style_set: 'Per-subscription style set: {0} -> {1}',
+        repo_style_cleared: 'Per-subscription style cleared: {0}',
+        no_matched_subs: 'No matched subscriptions.',
+        repo_style_item: '{0} => theme={1} style={2}',
+      },
+    },
+    'githubsth.trust': {
+      description: 'Manage trusted repositories',
+    },
+  },
+}

@@ -1,0 +1,198 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    width: {{width}}px;
+    background: {{background}};
+    color: {{text}};
+    font-family: {{font}};
+    --status-accent: {{statusAccent}};
+  }
+  .wrap { padding: 18px; position: relative; }
+  .wrap::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: {{overlayPattern}};
+    opacity: 0.5;
+  }
+  .card {
+    position: relative;
+    border-radius: 14px;
+    border: 1px solid {{border}};
+    background: {{card}};
+    overflow: hidden;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.28);
+    z-index: 1;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: {{cardTexture}};
+    opacity: 0.28;
+  }
+  .status-bar {
+    position: relative;
+    z-index: 2;
+    height: 3px;
+    background: linear-gradient(90deg, var(--status-accent), transparent);
+  }
+  .head {
+    position: relative;
+    z-index: 1;
+    padding: 12px 16px;
+    border-bottom: 1px solid {{border}};
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .head-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .dot { width: 10px; height: 10px; border-radius: 999px; background: var(--status-accent); box-shadow: 0 0 0 3px {{pillBg}}; }
+  .repo { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0.2px; }
+  .meta { color: {{muted}}; font-size: 12px; letter-spacing: 0.3px; }
+  .type-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    border: 1px solid {{border}};
+    color: var(--status-accent);
+    margin-right: 8px;
+  }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 12px;
+    border: 1px solid {{border}};
+    color: {{pillText}};
+    background: {{pillBg}};
+    margin-left: 6px;
+  }
+  .body { position: relative; z-index: 1; padding: 14px 16px 16px; }
+  .title { font-size: 18px; font-weight: 700; margin-bottom: 6px; letter-spacing: 0.2px; }
+  .sub { color: {{muted}}; margin-bottom: 12px; }
+  .content {
+    border: 1px dashed {{border}};
+    border-radius: 10px;
+    padding: 10px 12px;
+    line-height: 1.62;
+    font-size: 14px;
+    word-break: break-word;
+    margin-top: 8px;
+    background: {{contentBg}};
+  }
+  .detail-grid {
+    margin-top: 10px;
+    border: 1px solid {{border}};
+    border-radius: 10px;
+    background: {{contentBg}};
+    overflow: hidden;
+  }
+  .detail-row {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 10px;
+    padding: 8px 10px;
+    border-bottom: 1px solid {{border}};
+    font-size: 13px;
+  }
+  .detail-row:last-child { border-bottom: 0; }
+  .detail-key { color: {{muted}}; }
+  .detail-value { word-break: break-word; }
+  .commit-list { margin-top: 10px; border-top: 1px solid {{border}}; padding-top: 10px; }
+  .commit-item { display: flex; align-items: baseline; gap: 6px; font-size: 13px; margin-bottom: 6px; }
+  .commit-icon { width: 22px; text-align: center; color: var(--status-accent); }
+  .commit-hash {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 8px;
+    border: 1px solid {{border}};
+    background: {{pillBg}};
+    color: {{pillText}};
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .commit-author { color: {{muted}}; }
+  .digest-list {
+    margin-top: 10px;
+    border: 1px solid {{border}};
+    border-radius: 10px;
+    background: {{contentBg}};
+    overflow: hidden;
+  }
+  .digest-item {
+    display: grid;
+    grid-template-columns: 90px 1fr;
+    gap: 10px;
+    padding: 8px 10px;
+    border-bottom: 1px solid {{border}};
+    font-size: 13px;
+  }
+  .digest-item:last-child { border-bottom: 0; }
+  .digest-event { color: var(--status-accent); font-weight: 600; }
+
+  body.style-glass .card { border-radius: 18px; backdrop-filter: blur(6px); box-shadow: 0 20px 50px rgba(0,0,0,0.35); }
+  body.style-glass .head { background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0)); }
+
+  body.style-neon .card { border-width: 2px; box-shadow: 0 0 0 1px var(--status-accent) inset, 0 0 28px rgba(0,0,0,0.38); }
+  body.style-neon .dot { box-shadow: 0 0 0 4px {{pillBg}}, 0 0 14px var(--status-accent); }
+  body.style-neon .title { text-transform: uppercase; letter-spacing: 0.8px; }
+
+  body.style-compact .wrap { padding: 10px; }
+  body.style-compact .head { padding: 10px 12px; }
+  body.style-compact .body { padding: 10px 12px 12px; }
+  body.style-compact .title { font-size: 16px; }
+  body.style-compact .content { font-size: 13px; }
+  body.style-compact .detail-row { grid-template-columns: 90px 1fr; padding: 6px 8px; }
+
+  body.style-card .card { border-radius: 24px; box-shadow: 0 26px 54px rgba(0,0,0,0.35); }
+  body.style-card .head { border-bottom-style: dashed; }
+  body.style-card .content { border-style: solid; }
+
+  body.style-terminal .card { border-radius: 0; border-width: 2px; box-shadow: none; }
+  body.style-terminal .head,
+  body.style-terminal .content,
+  body.style-terminal .pill,
+  body.style-terminal .commit-hash,
+  body.style-terminal .detail-grid,
+  body.style-terminal .digest-list { border-radius: 0; }
+  body.style-terminal .title { font-size: 17px; letter-spacing: 0.5px; }
+
+  body.style-github .repo::before { content: '#'; margin-right: 4px; color: {{muted}}; }
+
+  {{extraCss}}
+</style>
+</head>
+<body class="theme-{{themeKey}} style-{{styleVariant}}">
+  <div class="wrap">
+    <div class="card">
+      <div class="status-bar"></div>
+      <div class="head">
+        <div class="head-left">
+          <span class="dot"></span>
+          <span class="repo">{{repo}}</span>
+        </div>
+        <div class="meta">{{themeTitle}}</div>
+      </div>
+      <div class="body">
+        <div class="title"><span class="type-badge">{{typeLabel}}</span>{{eventTitle}}</div>
+        <div class="sub">by {{actor}}{{actionPill}}{{statusPills}}</div>
+        <div class="content">{{content}}</div>
+        {{detailBlock}}
+        {{commitBlock}}
+        {{digestBlock}}
+      </div>
+    </div>
+  </div>
+</body>
+</html>

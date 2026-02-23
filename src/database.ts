@@ -1,9 +1,11 @@
 import { Context } from 'koishi'
+import type { RenderStyle, RenderTheme } from './config'
 
 declare module 'koishi' {
   interface Tables {
     github_subscription: GithubSubscription
     github_trusted_repo: GithubTrustedRepo
+    github_event_dedup: GithubEventDedup
   }
 }
 
@@ -13,6 +15,8 @@ export interface GithubSubscription {
   channelId: string
   platform: string
   events: string[]
+  renderTheme?: RenderTheme
+  renderStyle?: RenderStyle
 }
 
 export interface GithubTrustedRepo {
@@ -23,6 +27,14 @@ export interface GithubTrustedRepo {
   addedAt: Date
 }
 
+export interface GithubEventDedup {
+  id: number
+  dedupKey: string
+  event: string
+  repo: string
+  createdAt: Date
+}
+
 export function apply(ctx: Context) {
   ctx.model.extend('github_subscription', {
     id: 'unsigned',
@@ -30,8 +42,11 @@ export function apply(ctx: Context) {
     channelId: 'string',
     platform: 'string',
     events: 'list',
+    renderTheme: 'string',
+    renderStyle: 'string',
   }, {
     autoInc: true,
+    unique: ['repo', 'channelId', 'platform'],
   })
 
   ctx.model.extend('github_trusted_repo', {
@@ -43,5 +58,16 @@ export function apply(ctx: Context) {
   }, {
     autoInc: true,
     unique: ['repo'],
+  })
+
+  ctx.model.extend('github_event_dedup', {
+    id: 'unsigned',
+    dedupKey: 'string',
+    event: 'string',
+    repo: 'string',
+    createdAt: 'timestamp',
+  }, {
+    autoInc: true,
+    unique: ['dedupKey'],
   })
 }

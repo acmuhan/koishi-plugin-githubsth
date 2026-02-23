@@ -1,22 +1,36 @@
 import { Context } from 'koishi'
 import { Config } from '../config'
 
+declare module 'koishi' {
+  interface Context {
+    github?: any
+  }
+}
+
 export function apply(ctx: Context, config: Config) {
-  ctx.command('githubsth.repo [name:string]')
+  ctx.command('githubsth.repo [name:string]', '获取仓库信息')
     .action(async ({ session }, name) => {
-      if (!name && !config.defaultRepo) {
-        return session?.text('.specify_repo')
-      }
-      
+      if (!name && !config.defaultRepo) return session?.text('.specify_repo')
+
       const fullRepo = name || (config.defaultOwner ? `${config.defaultOwner}/${config.defaultRepo}` : name)
       if (!fullRepo) return session?.text('.specify_repo')
 
-      // 在实际实现中，我们将在此处使用 GitHub API。
-      // 由于我们没有 API 客户端的具体设置细节（例如 Octokit 或适配器内部实现），
-      // 我们将返回一个占位符，以确认命令结构正常工作。
-      
-      // TODO: 使用 session.bot 或专用服务实现实际的 GitHub API 调用。
-      
-      return session?.text('.repo_info', [fullRepo.split('/')[0], fullRepo.split('/')[1] || '?', 'Demo Description', '100'])
+      try {
+        let data: any
+        if (ctx.github && typeof ctx.github.request === 'function') {
+          data = await ctx.github.request('GET /repos/:owner/:repo', {
+            owner: fullRepo.split('/')[0],
+            repo: fullRepo.split('/')[1],
+          })
+        } else {
+          const headers: Record<string, string> = { 'User-Agent': 'Koishi-Plugin-GithubSth' }
+          data = await ctx.http.get(`https://api.github.com/repos/${fullRepo}`, { headers })
+        }
+
+        return session?.text('.repo_info', [data.owner.login, data.name, data.description || '无描述', data.stargazers_count])
+      } catch (e: any) {
+        if (e.response?.status === 404) return session?.text('.not_found')
+        return session?.text('.error', [e.message])
+      }
     })
 }

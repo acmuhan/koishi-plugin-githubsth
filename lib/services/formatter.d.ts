@@ -1,17 +1,25 @@
-import { Context, Service, h } from 'koishi';
+import { Context, Service } from 'koishi';
+import type { Config } from '../config';
 declare module 'koishi' {
     interface Context {
-        formatter: Formatter;
+        githubsthFormatter: Formatter;
     }
 }
 export declare class Formatter extends Service {
-    constructor(ctx: Context);
-    formatPush(payload: any): h | null;
-    formatIssue(payload: any): h;
-    formatPullRequest(payload: any): h;
-    formatStar(payload: any): h | null;
-    formatFork(payload: any): h;
-    formatRelease(payload: any): h | null;
-    formatDiscussion(payload: any): h;
-    formatWorkflowRun(payload: any): h | null;
+    private readonly locale;
+    constructor(ctx: Context, config?: Partial<Config>);
+    formatPush(payload: any): string | null;
+    formatIssue(payload: any): string;
+    formatPullRequest(payload: any): string;
+    formatStar(payload: any): string | null;
+    formatFork(payload: any): string;
+    formatRelease(payload: any): string | null;
+    formatDiscussion(payload: any): string;
+    formatWorkflowRun(payload: any): string | null;
+    formatIssueComment(payload: any): string | null;
+    formatPullRequestReview(payload: any): string | null;
+    private summarizeCommentBody;
+    private mapAction;
+    private t;
+    private render;
 }

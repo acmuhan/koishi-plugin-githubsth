@@ -1,8 +1,3 @@
 import { Context } from 'koishi';
 import { Config } from '../config';
-declare module 'koishi' {
-    interface Context {
-        github?: any;
-    }
-}
 export declare function apply(ctx: Context, config: Config): void;

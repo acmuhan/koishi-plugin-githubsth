@@ -1,0 +1,27 @@
+import type { RenderStyle, RenderTheme } from '../config';
+type ThemeStyle = Exclude<RenderStyle, 'auto'>;
+export type ThemePreset = {
+    key: string;
+    title: string;
+    style: ThemeStyle;
+    background: string;
+    card: string;
+    border: string;
+    text: string;
+    muted: string;
+    accent: string;
+    pillText: string;
+    pillBg: string;
+    contentBg: string;
+    overlayPattern: string;
+    cardTexture: string;
+    extraCss: string;
+    font: string;
+};
+export declare function listRenderThemes(): RenderTheme[];
+export declare function listRenderStyles(): RenderStyle[];
+export declare function getThemeDefaultStyle(theme: RenderTheme): ThemeStyle;
+export declare function normalizeRenderTheme(theme?: string | null): RenderTheme | null;
+export declare function normalizeRenderStyle(style?: string | null): RenderStyle | null;
+export declare function buildRenderHtml(textMessage: string, event: string, payload: any, theme: RenderTheme, width: number, style?: RenderStyle | null): string;
+export {};
