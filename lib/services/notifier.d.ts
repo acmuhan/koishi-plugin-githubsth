@@ -36,6 +36,11 @@ export declare class Notifier extends Service {
     renderPreview(event?: string, theme?: RenderTheme | null): Promise<any>;
     private registerListeners;
     private handleEvent;
+    /**
+     * 将新适配器的结构化事件数据转换为 formatter 能用的扁平格式
+     * 兼容旧格式 (repository.full_name, sender.login 等)
+     */
+    private buildFlatPayload;
     private resolveRuleTheme;
     private resolveRuleStyle;
     private formatByEvent;
@@ -45,12 +50,10 @@ export declare class Notifier extends Service {
     private renderTextAsImage;
     private normalizeRenderedImage;
     private extractRepoName;
-    private patchPayloadForEvent;
     private buildEventDedupKey;
     private shouldProcessEvent;
     private cleanupDedupTable;
     private sendMessage;
     private sendWithRetry;
-    private sleep;
     private getPreviewPayload;
 }

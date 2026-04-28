@@ -113,7 +113,7 @@ export class Notifier extends Service {
     bind('github/issue', 'issues')
     bind('github/issue-comment', 'issue_comment')
     bind('github/pull-request', 'pull_request')
-    bind('github/pull-request-review', 'pull_request_review')
+    bind('github/pull-request-review-comment', 'pull_request_review')
     bind('github/workflow-run', 'workflow_run')
     bind('github/push', 'push')
     bind('github/star', 'star')
@@ -121,29 +121,27 @@ export class Notifier extends Service {
     bind('github/release', 'release')
     bind('github/discussion', 'discussion')
 
-    bind('github/issues', 'issues')
-    bind('github/pull_request', 'pull_request')
-    bind('github/workflow_run', 'workflow_run')
-    bind('github/issue_comment', 'issue_comment')
-
     if (this.config.enableSessionFallback !== false) {
       this.ctx.on('message-created', (session) => {
         if (session.platform !== 'github') return
         const payload = (session as any).payload || (session as any).extra || (session as any).data
         if (!payload) return
 
+        // 新适配器的 session fallback：payload 已经是结构化事件数据
+        // 包含 owner, repo, repoKey, actor, payload(原始), type, action
         const realPayload = payload.payload || payload
         let eventType = 'unknown'
+
         if (realPayload.issue && realPayload.comment) eventType = 'issue_comment'
         else if (realPayload.issue) eventType = 'issues'
-        else if (realPayload.pull_request && realPayload.review) eventType = 'pull_request_review'
-        else if (realPayload.pull_request) eventType = 'pull_request'
+        else if (realPayload.pullRequest && realPayload.comment) eventType = 'pull_request_review'
+        else if (realPayload.pullRequest) eventType = 'pull_request'
         else if (realPayload.commits) eventType = 'push'
-        else if (realPayload.starred_at !== undefined || realPayload.action === 'started') eventType = 'star'
         else if (realPayload.forkee) eventType = 'fork'
         else if (realPayload.release) eventType = 'release'
         else if (realPayload.discussion) eventType = 'discussion'
-        else if (realPayload.workflow_run) eventType = 'workflow_run'
+        else if (realPayload.workflowRun) eventType = 'workflow_run'
+        else if (realPayload.starred_at !== undefined || payload.action === 'started') eventType = 'star'
         else if (realPayload.repository && (realPayload.action === 'created' || realPayload.action === 'started')) eventType = 'star'
 
         if (eventType !== 'unknown') void this.handleEvent(eventType, payload)
@@ -152,34 +150,24 @@ export class Notifier extends Service {
   }
 
   private async handleEvent(event: string, payload: any) {
+    // 新适配器 v1.1.2 的 payload 是结构化事件数据
+    // 包含 owner, repo, repoKey, actor, action, timestamp
+    // 以及对应的 issue, comment, pullRequest, discussion 等
+    // realPayload 是原始 GitHub webhook payload（如果存在）
     const realPayload = payload.payload || payload
 
-    if (payload.actor && !realPayload.sender) {
-      const actorLogin = payload.actor.login || payload.actor.name || 'GitHub'
-      realPayload.sender = { ...payload.actor, login: actorLogin }
-    }
+    // 从结构化数据中提取 repo 信息
+    const repoName = payload.repoKey
+      || (payload.owner && payload.repo ? `${payload.owner}/${payload.repo}` : null)
+      || this.extractRepoName(payload, realPayload, event)
+      || realPayload.repository?.full_name
+      || 'Unknown/Repo'
 
-    if (payload.repository && !realPayload.repository) {
-      realPayload.repository = payload.repository
-    }
+    // 确保 formatter 能读取到数据
+    // 构造一个兼容新旧格式的扁平 payload 给 formatter 用
+    const flatPayload = this.buildFlatPayload(payload, realPayload, event, repoName)
 
-    let repoName = this.extractRepoName(payload, realPayload, event)
-    if (!realPayload.repository) realPayload.repository = { full_name: repoName || 'Unknown/Repo' }
-    else if (!realPayload.repository.full_name) realPayload.repository.full_name = repoName || 'Unknown/Repo'
-
-    if (!realPayload.sender) {
-      if (realPayload.issue?.user) realPayload.sender = realPayload.issue.user
-      else if (realPayload.pull_request?.user) realPayload.sender = realPayload.pull_request.user
-      else if (realPayload.discussion?.user) realPayload.sender = realPayload.discussion.user
-      else if (realPayload.pusher) realPayload.sender = { login: realPayload.pusher.name || 'Pusher' }
-      else realPayload.sender = { login: 'GitHub' }
-    }
-
-    if (!(await this.shouldProcessEvent(event, payload, realPayload, repoName))) return
-
-    this.patchPayloadForEvent(event, realPayload, repoName || 'Unknown/Repo')
-    repoName = repoName || realPayload.repository?.full_name
-    if (!repoName) return
+    if (!(await this.shouldProcessEvent(event, payload, flatPayload, repoName))) return
 
     const repoNames = [repoName]
     if (repoName !== repoName.toLowerCase()) repoNames.push(repoName.toLowerCase())
@@ -201,20 +189,81 @@ export class Notifier extends Service {
       matchedRules.map((rule) => [`${repoName}|${rule.channelId}`, rule] as const)
     ).values())
 
-    const textMessage = this.formatByEvent(event, realPayload)
+    const textMessage = this.formatByEvent(event, flatPayload)
     if (!textMessage) return
 
     for (const rule of uniqueRules) {
       const theme = this.resolveRuleTheme(rule)
       const style = this.resolveRuleStyle(rule)
       if (this.config.digestEnabled) {
-        this.enqueueDigest({ event, repo: repoName, text: textMessage, payload: realPayload, theme, style, rule })
+        this.enqueueDigest({ event, repo: repoName, text: textMessage, payload: flatPayload, theme, style, rule })
         continue
       }
-      const outbound = await this.prepareOutboundMessage(textMessage, event, realPayload, theme, style)
+      const outbound = await this.prepareOutboundMessage(textMessage, event, flatPayload, theme, style)
       if (!outbound) continue
       await this.sendMessage(rule, outbound)
     }
+  }
+
+  /**
+   * 将新适配器的结构化事件数据转换为 formatter 能用的扁平格式
+   * 兼容旧格式 (repository.full_name, sender.login 等)
+   */
+  private buildFlatPayload(payload: any, realPayload: any, event: string, repoName: string): any {
+    // 如果已经是旧格式（有 repository.full_name），直接返回
+    if (realPayload.repository?.full_name) return realPayload
+
+    const flat: any = { ...realPayload }
+    const actor = payload.actor || realPayload.actor || {}
+    const actorLogin = actor.login || actor.name || 'GitHub'
+
+    // 构造 repository 对象
+    if (!flat.repository) {
+      flat.repository = {
+        full_name: repoName,
+        stargazers_count: realPayload.repository?.stargazers_count
+          || payload.repository?.stargazers_count
+          || 0,
+        html_url: `https://github.com/${repoName}`,
+      }
+    }
+
+    // 构造 sender
+    if (!flat.sender) {
+      flat.sender = {
+        login: actorLogin,
+        id: actor.id || 0,
+        avatar_url: actor.avatar_url || '',
+      }
+    }
+
+    // 统一字段名：新适配器用 camelCase，旧格式用 snake_case
+    // issue -> 已有，不变
+    // pullRequest -> 需要映射到 pull_request
+    if (payload.pullRequest && !flat.pull_request) {
+      flat.pull_request = payload.pullRequest
+    }
+    if (payload.workflowRun && !flat.workflow_run) {
+      flat.workflow_run = payload.workflowRun
+    }
+    if (payload.workflow && !flat.workflow) {
+      flat.workflow = payload.workflow
+    }
+    if (payload.headCommit && !flat.head_commit) {
+      flat.head_commit = payload.headCommit
+    }
+
+    // action
+    if (payload.action && !flat.action) {
+      flat.action = payload.action
+    }
+
+    // 补全其他字段
+    if (!flat.pusher && payload.actor) {
+      flat.pusher = { name: actorLogin }
+    }
+
+    return flat
   }
 
   private resolveRuleTheme(rule: RuleWithRender): RenderTheme {
@@ -350,6 +399,7 @@ export class Notifier extends Service {
       if (parts.length >= 2) repoName = `${parts[parts.length - 2]}/${parts[parts.length - 1]}`
     }
     if (!repoName && realPayload.pull_request?.base?.repo?.full_name) repoName = realPayload.pull_request.base.repo.full_name
+    if (!repoName && realPayload.pullRequest?.base?.repo?.full_name) repoName = realPayload.pullRequest.base.repo.full_name
     if (!repoName && typeof payload.repoKey === 'string' && payload.repoKey.includes('/')) repoName = payload.repoKey
     if (!repoName && typeof payload.owner === 'string' && typeof payload.repo === 'string') repoName = `${payload.owner}/${payload.repo}`
     if (!repoName && typeof payload.repo === 'string' && payload.repo.includes('/')) repoName = payload.repo
@@ -360,78 +410,18 @@ export class Notifier extends Service {
     return repoName
   }
 
-  private patchPayloadForEvent(event: string, payload: any, repoName: string) {
-    const defaultUser = { login: 'GitHub', id: 0, avatar_url: '' }
-    if (!payload.sender) payload.sender = defaultUser
-    const defaultRepo = { full_name: repoName, stargazers_count: 0, html_url: `https://github.com/${repoName}` }
-    if (!payload.repository) payload.repository = defaultRepo
-
-    switch (event) {
-      case 'push':
-        if (!payload.pusher) payload.pusher = { name: payload.sender.login }
-        if (!payload.commits) payload.commits = []
-        if (!payload.ref) payload.ref = 'refs/heads/unknown'
-        if (!payload.compare) payload.compare = ''
-        for (const commit of payload.commits) {
-          if (!commit.author) commit.author = { name: 'Unknown' }
-          if (!commit.id) commit.id = '0000000'
-          if (!commit.message) commit.message = 'No message'
-        }
-        break
-      case 'issues':
-        if (!payload.action) payload.action = 'updated'
-        if (!payload.issue) payload.issue = { number: 0, title: 'Unknown Issue', html_url: '', user: payload.sender }
-        if (!payload.issue.user) payload.issue.user = payload.sender
-        break
-      case 'pull_request':
-        if (!payload.action) payload.action = 'updated'
-        if (!payload.pull_request) payload.pull_request = { number: 0, title: 'Unknown PR', state: 'unknown', html_url: '', user: payload.sender }
-        if (!payload.pull_request.user) payload.pull_request.user = payload.sender
-        break
-      case 'star':
-        if (!payload.action || payload.action === 'started') payload.action = 'created'
-        if (payload.repository?.stargazers_count === undefined) payload.repository.stargazers_count = '?'
-        break
-      case 'fork':
-        if (!payload.forkee) payload.forkee = { full_name: 'unknown/fork' }
-        break
-      case 'release':
-        if (!payload.action) payload.action = 'published'
-        if (!payload.release) payload.release = { tag_name: 'unknown', name: 'Unknown Release', html_url: '' }
-        break
-      case 'discussion':
-        if (!payload.action) payload.action = 'updated'
-        if (!payload.discussion) payload.discussion = { number: 0, title: 'Unknown Discussion', html_url: '', user: payload.sender }
-        if (!payload.discussion.user) payload.discussion.user = payload.sender
-        break
-      case 'workflow_run':
-        if (!payload.action) payload.action = 'completed'
-        if (!payload.workflow_run) payload.workflow_run = { conclusion: 'unknown', name: 'Unknown Workflow', head_branch: 'unknown', html_url: '' }
-        break
-      case 'issue_comment':
-        if (!payload.action) payload.action = 'created'
-        if (!payload.issue) payload.issue = { number: 0, title: 'Unknown Issue', html_url: '', user: payload.sender }
-        if (!payload.comment) payload.comment = { body: '', html_url: '' }
-        if (!payload.issue.user) payload.issue.user = payload.sender
-        break
-      case 'pull_request_review':
-        if (!payload.action) payload.action = 'submitted'
-        if (!payload.pull_request) payload.pull_request = { number: 0, title: 'Unknown PR', html_url: '', user: payload.sender }
-        if (!payload.review) payload.review = { state: 'unknown', html_url: '' }
-        if (!payload.pull_request.user) payload.pull_request.user = payload.sender
-        break
-    }
-  }
-
   private buildEventDedupKey(event: string, payload: any, realPayload: any, repoName?: string) {
     const keyRepo = repoName || payload.repoKey || `${payload.owner || ''}/${payload.repo || ''}` || realPayload.repository?.full_name || 'unknown/repo'
     const action = realPayload.action || payload.action || ''
-    const commentId = realPayload.comment?.id || ''
+    const commentId = realPayload.comment?.id || payload.comment?.id || ''
     const issueId = realPayload.issue?.id || realPayload.issue?.number || ''
-    const prId = realPayload.pull_request?.id || realPayload.pull_request?.number || ''
+    const prId = realPayload.pull_request?.id || realPayload.pull_request?.number
+      || realPayload.pullRequest?.id || realPayload.pullRequest?.number || ''
     const releaseId = realPayload.release?.id || realPayload.release?.tag_name || ''
-    const workflowId = realPayload.workflow_run?.id || realPayload.workflow_run?.run_id || ''
-    const headCommit = realPayload.head_commit?.id || realPayload.after || realPayload.commits?.[0]?.id || ''
+    const workflowId = realPayload.workflow_run?.id || realPayload.workflow_run?.run_id
+      || payload.workflowRun?.id || ''
+    const headCommit = realPayload.head_commit?.id || realPayload.after || payload.after
+      || realPayload.commits?.[0]?.id || ''
     const explicitId = payload.id || realPayload.id || payload.timestamp || ''
     return [event, keyRepo, action, commentId, issueId, prId, releaseId, workflowId, headCommit, explicitId].join('|')
   }
@@ -502,54 +492,94 @@ export class Notifier extends Service {
         return
       } catch (error) {
         lastError = error
-        if (attempt >= retryCount) break
-        await this.sleep(baseDelay * Math.pow(2, attempt))
+        if (attempt < retryCount) {
+          const delay = baseDelay * Math.pow(2, attempt)
+          await new Promise((resolve) => setTimeout(resolve, delay))
+        }
       }
     }
     throw lastError
   }
 
-  private sleep(ms: number) {
-    return new Promise<void>((resolve) => setTimeout(resolve, ms))
-  }
-
   private getPreviewPayload(event: string) {
-    const payload: any = {
-      action: 'created',
-      repository: { full_name: 'acmuhan/JackalClientDocs', stargazers_count: 128, forks_count: 12, open_issues_count: 3 },
-      sender: { login: 'vercel[bot]' },
-      issue: {
-        number: 29,
-        title: 'Delete demobot',
-        html_url: 'https://github.com/acmuhan/JackalClientDocs/issues/29',
-        pull_request: { html_url: 'https://github.com/acmuhan/JackalClientDocs/pull/29' },
-      },
-      comment: { body: '[vc]: digest payload hidden' },
-      pull_request: {
-        number: 29,
-        title: 'Delete demobot',
-        state: 'open',
-        html_url: 'https://github.com/acmuhan/JackalClientDocs/pull/29',
-      },
-      workflow_run: {
-        name: 'Deploy',
-        conclusion: 'success',
-        head_branch: 'main',
-        html_url: 'https://github.com/acmuhan/JackalClientDocs/actions/runs/1',
-      },
-      commits: [{ id: 'ea5eaddca38f25ce013ee50d70addb49c8d28844', message: 'feat: delete demobot', author: { name: 'MuHan' } }],
-      ref: 'refs/heads/main',
-      compare: 'https://github.com/acmuhan/JackalClientDocs/compare/old...new',
-      pusher: { name: 'acmuhan' },
-      release: { tag_name: 'v1.2.0', name: 'Spring Patch', html_url: 'https://github.com/acmuhan/JackalClientDocs/releases/tag/v1.2.0' },
-      forkee: { full_name: 'acmuhan/JackalClientDocs-fork' },
-      discussion: { number: 7, title: 'Roadmap', html_url: 'https://github.com/acmuhan/JackalClientDocs/discussions/7' },
-      review: { state: 'approved', html_url: 'https://github.com/acmuhan/JackalClientDocs/pull/29#pullrequestreview-1' },
+    const mockRepo = 'owner/repo'
+    switch (event) {
+      case 'push':
+        return {
+          repository: { full_name: mockRepo, html_url: `https://github.com/${mockRepo}` },
+          sender: { login: 'octocat' },
+          ref: 'refs/heads/main',
+          commits: [
+            { id: 'abc123', message: 'feat: add new feature', author: { name: 'octocat' } },
+          ],
+          compare: `https://github.com/${mockRepo}/compare/old..new`,
+          pusher: { name: 'octocat' },
+        }
+      case 'issues':
+        return {
+          repository: { full_name: mockRepo, html_url: `https://github.com/${mockRepo}` },
+          sender: { login: 'octocat' },
+          action: 'opened',
+          issue: { number: 1, title: 'Example Issue', html_url: `https://github.com/${mockRepo}/issues/1`, user: { login: 'octocat' } },
+        }
+      case 'issue_comment':
+        return {
+          repository: { full_name: mockRepo, html_url: `https://github.com/${mockRepo}` },
+          sender: { login: 'octocat' },
+          action: 'created',
+          issue: { number: 1, title: 'Example Issue', html_url: `https://github.com/${mockRepo}/issues/1`, user: { login: 'octocat' } },
+          comment: { body: 'This is a sample comment', html_url: `https://github.com/${mockRepo}/issues/1#issuecomment-1` },
+        }
+      case 'pull_request':
+        return {
+          repository: { full_name: mockRepo, html_url: `https://github.com/${mockRepo}` },
+          sender: { login: 'octocat' },
+          action: 'opened',
+          pull_request: { number: 1, title: 'Example PR', html_url: `https://github.com/${mockRepo}/pull/1`, user: { login: 'octocat' } },
+        }
+      case 'pull_request_review':
+        return {
+          repository: { full_name: mockRepo, html_url: `https://github.com/${mockRepo}` },
+          sender: { login: 'octocat' },
+          action: 'submitted',
+          pull_request: { number: 1, title: 'Example PR', html_url: `https://github.com/${mockRepo}/pull/1`, user: { login: 'octocat' } },
+          review: { state: 'approved', html_url: `https://github.com/${mockRepo}/pull/1#pullrequestreview-1` },
+        }
+      case 'star':
+        return {
+          repository: { full_name: mockRepo, stargazers_count: 42, html_url: `https://github.com/${mockRepo}` },
+          sender: { login: 'octocat' },
+          action: 'created',
+        }
+      case 'fork':
+        return {
+          repository: { full_name: mockRepo, html_url: `https://github.com/${mockRepo}` },
+          sender: { login: 'octocat' },
+          forkee: { full_name: 'octocat/repo', html_url: `https://github.com/octocat/repo` },
+        }
+      case 'release':
+        return {
+          repository: { full_name: mockRepo, html_url: `https://github.com/${mockRepo}` },
+          sender: { login: 'octocat' },
+          action: 'published',
+          release: { tag_name: 'v1.0.0', name: 'Initial Release', html_url: `https://github.com/${mockRepo}/releases/v1.0.0` },
+        }
+      case 'discussion':
+        return {
+          repository: { full_name: mockRepo, html_url: `https://github.com/${mockRepo}` },
+          sender: { login: 'octocat' },
+          action: 'created',
+          discussion: { number: 1, title: 'Example Discussion', html_url: `https://github.com/${mockRepo}/discussions/1`, user: { login: 'octocat' } },
+        }
+      case 'workflow_run':
+        return {
+          repository: { full_name: mockRepo, html_url: `https://github.com/${mockRepo}` },
+          sender: { login: 'octocat' },
+          action: 'completed',
+          workflow_run: { name: 'CI', conclusion: 'success', head_branch: 'main', html_url: `https://github.com/${mockRepo}/actions/runs/1` },
+        }
+      default:
+        return null
     }
-
-    if (event === 'workflow_run') payload.action = 'completed'
-    if (event === 'pull_request_review') payload.action = 'submitted'
-    if (event === 'release') payload.action = 'published'
-    return payload
   }
 }
