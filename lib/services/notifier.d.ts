@@ -13,7 +13,12 @@ export declare class Notifier extends Service {
     private dedupWriteCounter;
     private runtimeRenderMode;
     private readonly digestBuckets;
+    private healthCheckTimer;
     constructor(ctx: Context, config: Config);
+    /** 启动健康检查：定期检查数据库连接和订阅状态 */
+    private startHealthCheck;
+    /** 执行健康检查 */
+    private performHealthCheck;
     listThemes(): RenderTheme[];
     normalizeTheme(theme?: string | null): RenderTheme | null;
     listStyles(): RenderStyle[];

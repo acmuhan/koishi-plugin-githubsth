@@ -45,12 +45,42 @@ export class Notifier extends Service {
   private dedupWriteCounter = 0
   private runtimeRenderMode: RenderMode | null = null
   private readonly digestBuckets = new Map<string, DigestBucket>()
+  private healthCheckTimer: NodeJS.Timeout | null = null
 
   // @ts-ignore
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'githubsthNotifier', true)
     this.ctx.logger('githubsth').info('Notifier service initialized')
     this.registerListeners()
+    this.startHealthCheck()
+  }
+
+  /** 启动健康检查：定期检查数据库连接和订阅状态 */
+  private startHealthCheck() {
+    const interval = 5 * 60 * 1000 // 每 5 分钟检查一次
+    this.healthCheckTimer = setInterval(() => {
+      void this.performHealthCheck()
+    }, interval)
+    // 启动后马上检查一次
+    void this.performHealthCheck()
+  }
+
+  /** 执行健康检查 */
+  private async performHealthCheck() {
+    try {
+      // 检查数据库连通性
+      const count = await this.ctx.database.get('github_subscription', {})
+      if (this.config.debug) {
+        this.ctx.logger('githubsth').debug(`Health check OK — ${count.length} active subscriptions`)
+      }
+    } catch (error) {
+      this.ctx.logger('githubsth').error('Health check failed — database may be unavailable:', error)
+      // 数据库不可用时，5 秒后重试一次，然后等下一轮
+      setTimeout(() => {
+        this.ctx.logger('githubsth').info('Retrying health check...')
+        void this.performHealthCheck()
+      }, 5000)
+    }
   }
 
   public listThemes() {
@@ -449,6 +479,7 @@ export class Notifier extends Service {
       if (this.dedupWriteCounter % 200 === 0) void this.cleanupDedupTable()
     } catch (error: any) {
       if (error?.code === 'SQLITE_CONSTRAINT') return false
+      this.ctx.logger('githubsth').warn('Dedup write error:', error?.message || error)
     }
     return true
   }
@@ -457,7 +488,9 @@ export class Notifier extends Service {
     const cutoff = new Date(Date.now() - this.config.dedupRetentionHours * 60 * 60 * 1000)
     try {
       await this.ctx.database.remove('github_event_dedup', { createdAt: { $lt: cutoff } as any })
-    } catch {}
+    } catch (error) {
+      this.ctx.logger('githubsth').warn('Dedup cleanup error:', error)
+    }
   }
 
   private async sendMessage(rule: RuleWithRender, outbound: Outbound) {
@@ -469,13 +502,17 @@ export class Notifier extends Service {
         await this.sendWithRetry(bot, rule.channelId, outbound.message)
         if (this.config.debug) this.ctx.logger('notifier').info(`Sent message to ${rule.channelId} via ${bot.platform}:${bot.selfId}`)
         return
-      } catch {
+      } catch (sendError) {
         if (outbound.isImage && this.config.renderFallback === 'text') {
           try {
             await this.sendWithRetry(bot, rule.channelId, outbound.text)
             this.ctx.logger('notifier').warn(`Image failed on ${bot.platform}:${bot.selfId}, fallback to text succeeded.`)
             return
-          } catch {}
+          } catch (fallbackError) {
+            this.ctx.logger('notifier').error(`Image + text fallback both failed on ${bot.platform}:${bot.selfId}:`, fallbackError)
+          }
+        } else {
+          this.ctx.logger('notifier').warn(`Send failed on ${bot.platform}:${bot.selfId}:`, sendError)
         }
       }
     }
